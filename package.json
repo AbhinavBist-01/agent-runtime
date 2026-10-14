@@ -30,7 +30,8 @@
     "undici-types": "^8.9.0",
     "vite": "^8.3.4",
     "why-is-node-running": "^3.2.1",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

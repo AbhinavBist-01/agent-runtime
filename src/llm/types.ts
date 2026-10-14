@@ -1,5 +1,3 @@
-import type { ToolExecutionResult } from "../tools/types.js";
-
 export type MessageRole = "system" | "user" | "assistant" | "tool";
 
 export interface ToolCallProposal {
