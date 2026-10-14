@@ -14,6 +14,12 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   execute: (input: TInput, context: ToolContext) => Promise<TOutput>;
   requiresApproval?: boolean;
   requiredPermissions?: string[];
+  timeoutMs?: number;
+  retry?: {
+    maxAttempts?: number;
+    initialDelayMs?: number;
+    backoffFactor?: number;
+  };
 }
 
 export interface ToolExecutionError {

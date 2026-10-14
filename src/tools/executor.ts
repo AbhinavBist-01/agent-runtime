@@ -1,5 +1,7 @@
 import type { ToolRegistry } from "./registry.js";
 import type { ToolContext, ToolExecutionResult } from "./types.js";
+import { withTimeout } from "../reliability/timeout.js";
+import { withRetry } from "../reliability/retry.js";
 
 export interface ExecutorOptions {
   toolCallId: string;
@@ -72,9 +74,34 @@ export class ToolExecutor {
       };
     }
 
-    // 4. Safe Execution Boundary
+    // 4. Safe Execution with Timeout & Bounded Retries
     try {
-      const data = await tool.execute(parsed.data, context);
+      const executeFn = async () => {
+        if (tool.timeoutMs && tool.timeoutMs > 0) {
+          return await withTimeout(
+            (timeoutSignal) =>
+              tool.execute(parsed.data, {
+                ...context,
+                signal: timeoutSignal,
+              }),
+            {
+              timeoutMs: tool.timeoutMs,
+              parentSignal: context.signal,
+              operationName: `Tool "${name}"`,
+            }
+          );
+        }
+        return await tool.execute(parsed.data, context);
+      };
+
+      const data = tool.retry
+        ? await withRetry(executeFn, {
+            maxAttempts: tool.retry.maxAttempts,
+            initialDelayMs: tool.retry.initialDelayMs,
+            backoffFactor: tool.retry.backoffFactor,
+            isRetryable: () => !context.signal.aborted,
+          })
+        : await executeFn();
 
       // Optional output contract validation
       if (tool.outputSchema) {
@@ -99,13 +126,14 @@ export class ToolExecutor {
       };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      const isTimeout = message.includes("timed out");
       return {
         ok: false,
         toolCallId,
         error: {
-          code: "EXECUTION_ERROR",
+          code: isTimeout ? "TIMEOUT" : "EXECUTION_ERROR",
           message,
-          retryable: true,
+          retryable: isTimeout || true,
         },
       };
     }
