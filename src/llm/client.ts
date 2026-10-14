@@ -30,6 +30,7 @@ export class OpenAILLMClient implements LLMClient {
   public async generate(
     messages: Message[],
     tools: ToolDefinition<any, any>[],
+    options?: import("./types.js").StreamOptions
   ): Promise<LLMResponse> {
     // 1. Format messages for OpenAI
     const openAIMessages: OpenAI.Chat.ChatCompletionMessageParam[] =
@@ -63,21 +64,79 @@ export class OpenAILLMClient implements LLMClient {
         };
       });
 
-    // 2. Prepare payload
-    const requestPayload: OpenAI.Chat.ChatCompletionCreateParams = {
+    // 2. Prepare tools
+    const openAITools =
+      tools.length > 0
+        ? (tools.map((t) => toolDefinitionToOpenAITool(t)) as any)
+        : undefined;
+
+    // 3. If streaming callback is requested, use stream: true
+    if (options?.onChunk) {
+      const stream = await this.client.chat.completions.create({
+        model: this.model,
+        temperature: this.temperature,
+        messages: openAIMessages,
+        ...(openAITools ? { tools: openAITools } : {}),
+        stream: true,
+      });
+
+      let accumulatedContent = "";
+      const toolCallMap = new Map<number, { id: string; name: string; arguments: string }>();
+
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta;
+        if (!delta) continue;
+
+        if (delta.content) {
+          accumulatedContent += delta.content;
+          options.onChunk(delta.content);
+        }
+
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const index = tc.index;
+            const existing = toolCallMap.get(index) ?? { id: "", name: "", arguments: "" };
+            if (tc.id) existing.id = tc.id;
+            if (tc.function?.name) existing.name += tc.function.name;
+            if (tc.function?.arguments) existing.arguments += tc.function.arguments;
+            toolCallMap.set(index, existing);
+          }
+        }
+      }
+
+      if (toolCallMap.size > 0) {
+        const formattedCalls = Array.from(toolCallMap.values()).map((call) => ({
+          id: call.id,
+          type: "function",
+          function: {
+            name: call.name,
+            arguments: call.arguments,
+          },
+        }));
+
+        const result: LLMResponse = {
+          type: "tool_calls",
+          toolCalls: normalizeOpenAIToolCalls(formattedCalls),
+        };
+        if (accumulatedContent) {
+          result.content = accumulatedContent;
+        }
+        return result;
+      }
+
+      return {
+        type: "final_answer",
+        content: accumulatedContent,
+      };
+    }
+
+    // 4. Fallback to non-streaming
+    const response = await this.client.chat.completions.create({
       model: this.model,
       temperature: this.temperature,
       messages: openAIMessages,
-    };
-
-    if (tools.length > 0) {
-      requestPayload.tools = tools.map((t) =>
-        toolDefinitionToOpenAITool(t),
-      ) as any;
-    }
-
-    // 3. Invoke API
-    const response = await this.client.chat.completions.create(requestPayload);
+      ...(openAITools ? { tools: openAITools } : {}),
+    });
 
     const choice = response.choices[0];
     if (!choice || !choice.message) {
@@ -86,15 +145,12 @@ export class OpenAILLMClient implements LLMClient {
 
     const rawMessage = choice.message;
 
-    // 4. Normalize response
     if (rawMessage.tool_calls && rawMessage.tool_calls.length > 0) {
       const functionCalls = rawMessage.tool_calls
         .filter(
-          (
-            tc,
-          ): tc is typeof tc & {
+          (tc): tc is typeof tc & {
             function: { name: string; arguments: string };
-          } => "function" in tc && Boolean(tc.function),
+          } => "function" in tc && Boolean(tc.function)
         )
         .map((tc) => ({
           id: tc.id,

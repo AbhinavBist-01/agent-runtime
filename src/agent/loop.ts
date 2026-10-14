@@ -8,6 +8,7 @@ import type { ApprovalHandler, InMemoryApprovalManager } from "../safety/approva
 export interface AgentRunOptions {
   task: string;
   signal?: AbortSignal;
+  onChunk?: (chunk: string) => void;
 }
 
 import type { ConversationStore } from "../memory/memory.js";
@@ -67,7 +68,11 @@ export class AgentOrchestrator {
       const tools = this.registry.list();
       const messages = stateManager.getState().messages;
 
-      const response = await this.llm.generate(messages, tools);
+      const response = await this.llm.generate(
+        messages,
+        tools,
+        options.onChunk ? { onChunk: options.onChunk } : undefined
+      );
 
       // Step 2: Handle LLM Decision
       if (response.type === "final_answer") {

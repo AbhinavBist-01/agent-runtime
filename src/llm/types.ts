@@ -24,6 +24,14 @@ export type LLMResponse =
       content: string;
     };
 
+export interface StreamOptions {
+  onChunk?: (chunk: string) => void;
+}
+
 export interface LLMClient {
-  generate(messages: Message[], tools: unknown[]): Promise<LLMResponse>;
+  generate(
+    messages: Message[],
+    tools: unknown[],
+    options?: StreamOptions
+  ): Promise<LLMResponse>;
 }

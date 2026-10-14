@@ -7,6 +7,7 @@
     "assertion-error": "^2.0.1",
     "chai": "^6.3.0",
     "detect-libc": "^2.1.2",
+    "dotenv": "^18.0.7",
     "es-module-lexer": "^2.3.2",
     "estree-walker": "^3.0.3",
     "expect-type": "^1.4.0",

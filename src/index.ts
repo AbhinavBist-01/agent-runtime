@@ -1,3 +1,4 @@
+import "dotenv/config";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { ToolRegistry } from "./tools/registry.js";
@@ -114,13 +115,18 @@ export async function main() {
   }
 
   console.log("\n⚡ Agent running...\n");
-  const result = await orchestrator.run({ task });
+  const result = await orchestrator.run({
+    task,
+    onChunk: (chunk) => {
+      process.stdout.write(chunk);
+    },
+  });
 
-  console.log("\n=================== EXECUTION SUMMARY ===================");
+  console.log("\n\n=================== EXECUTION SUMMARY ===================");
   console.log(`Status:     ${result.status}`);
   console.log(`Iterations: ${result.iteration}`);
   if (result.finalAnswer) {
-    console.log(`Answer:     \n${result.finalAnswer}`);
+    console.log(`Answer:\n${result.finalAnswer}`);
   }
   if (result.error) {
     console.log(`Error:      ${result.error}`);
