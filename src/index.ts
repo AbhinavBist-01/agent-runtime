@@ -127,8 +127,14 @@ export async function main() {
   }
 }
 
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 // Auto-run if executed directly
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
+const currentFilePath = fileURLToPath(import.meta.url);
+const executedFilePath = process.argv[1] ? path.resolve(process.argv[1]) : "";
+
+if (executedFilePath && currentFilePath === executedFilePath) {
   main().catch((err) => {
     console.error("Runtime fatal error:", err);
     process.exit(1);

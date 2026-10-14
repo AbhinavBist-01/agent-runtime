@@ -10,6 +10,8 @@ export interface AgentRunOptions {
   signal?: AbortSignal;
 }
 
+import type { ConversationStore } from "../memory/memory.js";
+
 export class AgentOrchestrator {
   private readonly maxIterations: number;
   private readonly permissions: string[];
@@ -20,7 +22,8 @@ export class AgentOrchestrator {
     private readonly executor: ToolExecutor,
     private readonly llm: LLMClient,
     private readonly approvalHandler?: ApprovalHandler,
-    private readonly approvalManager?: InMemoryApprovalManager
+    private readonly approvalManager?: InMemoryApprovalManager,
+    private readonly conversationStore?: ConversationStore
   ) {
     this.maxIterations = config.limits?.maxIterations ?? 10;
     this.permissions = config.permissions ?? [];
@@ -147,6 +150,11 @@ export class AgentOrchestrator {
       }
     }
 
-    return stateManager.getState();
+    const finalState = stateManager.getState();
+    if (this.conversationStore) {
+      await this.conversationStore.saveRun(finalState);
+    }
+
+    return finalState;
   }
 }
