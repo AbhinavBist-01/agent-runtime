@@ -15,3 +15,21 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   requiresApproval?: boolean;
   requiredPermissions?: string[];
 }
+
+export interface ToolExecutionError {
+  code: string;
+  message: string;
+  retryable: boolean;
+}
+
+export type ToolExecutionResult<TOutput = unknown> =
+  | {
+      ok: true;
+      toolCallId: string;
+      data: TOutput;
+    }
+  | {
+      ok: false;
+      toolCallId: string;
+      error: ToolExecutionError;
+    };
