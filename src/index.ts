@@ -39,29 +39,30 @@ export * from "./reliability/retry.js";
  * Pauses the runtime and prompts the user on CLI when a protected tool is called.
  */
 class ConsoleApprovalHandler implements ApprovalHandler {
+  constructor(private readonly rl: readline.Interface) {}
+
   async requestApproval(approval: PendingApproval): Promise<boolean> {
-    const rl = readline.createInterface({ input, output });
     console.log("\n=======================================================");
     console.log("⚠️  APPROVAL REQUIRED FOR PROTECTED ACTION");
     console.log(`Tool:      ${approval.toolCall.name}`);
     console.log(`Arguments: ${JSON.stringify(approval.toolCall.arguments, null, 2)}`);
     console.log("=======================================================");
 
-    const answer = await rl.question("Approve this tool execution? [y/N]: ");
-    rl.close();
-
-    const approved = answer.trim().toLowerCase() === "y" || answer.trim().toLowerCase() === "yes";
-    console.log(approved ? "✅ Execution approved." : "❌ Execution rejected by user.");
+    const answer = await this.rl.question("Approve this tool execution? [y/N]: ");
+    const approved =
+      answer.trim().toLowerCase() === "y" || answer.trim().toLowerCase() === "yes";
+    console.log(approved ? "✅ Execution approved.\n" : "❌ Execution rejected by user.\n");
     return approved;
   }
 }
 
 /**
- * CLI Entry point for running the agent
+ * CLI Entry point for running the agent in continuous interactive mode
  */
 export async function main() {
   console.log("=======================================================");
   console.log("🚀 Agent Runtime: Guardrailed Autonomous LLM Orchestrator");
+  console.log("Type 'exit' or 'quit' to close the session.");
   console.log("=======================================================\n");
 
   const registry = new ToolRegistry();
@@ -75,9 +76,7 @@ export async function main() {
 
   const executor = new ToolExecutor(registry);
   const approvalManager = new InMemoryApprovalManager();
-  const approvalHandler = new ConsoleApprovalHandler();
 
-  // Pick LLM client (OpenAI or compatible endpoint)
   const apiKey = process.env["OPENAI_API_KEY"];
   if (!apiKey) {
     console.log("💡 [Note]: OPENAI_API_KEY is not set in environment.");
@@ -90,46 +89,56 @@ export async function main() {
   }
 
   const llm = new OpenAILLMClient({ apiKey });
-
-  const orchestrator = new AgentOrchestrator(
-    {
-      runId: `run_${Date.now()}`,
-      systemPrompt: "You are a helpful assistant with access to safe tools. When asked to perform actions, choose appropriate tools.",
-      permissions: ["fs:read", "fs:write", "code:execute", "email:send"],
-      limits: { maxIterations: 8 },
-    },
-    registry,
-    executor,
-    llm,
-    approvalHandler,
-    approvalManager
-  );
-
   const rl = readline.createInterface({ input, output });
-  const task = await rl.question("Enter task for the agent: ");
-  rl.close();
+  const approvalHandler = new ConsoleApprovalHandler(rl);
 
-  if (!task.trim()) {
-    console.log("No task entered. Exiting.");
-    return;
-  }
+  try {
+    while (true) {
+      const task = await rl.question("\n💬 You: ");
 
-  console.log("\n⚡ Agent running...\n");
-  const result = await orchestrator.run({
-    task,
-    onChunk: (chunk) => {
-      process.stdout.write(chunk);
-    },
-  });
+      if (!task.trim()) continue;
 
-  console.log("\n\n=================== EXECUTION SUMMARY ===================");
-  console.log(`Status:     ${result.status}`);
-  console.log(`Iterations: ${result.iteration}`);
-  if (result.finalAnswer) {
-    console.log(`Answer:\n${result.finalAnswer}`);
-  }
-  if (result.error) {
-    console.log(`Error:      ${result.error}`);
+      if (
+        task.trim().toLowerCase() === "exit" ||
+        task.trim().toLowerCase() === "quit" ||
+        task.trim().toLowerCase() === "q"
+      ) {
+        console.log("\n👋 Exiting Agent Runtime. Goodbye!");
+        break;
+      }
+
+      const orchestrator = new AgentOrchestrator(
+        {
+          runId: `run_${Date.now()}`,
+          systemPrompt:
+            "You are a helpful assistant with access to safe tools. When asked to perform actions, choose appropriate tools.",
+          permissions: ["fs:read", "fs:write", "code:execute", "email:send"],
+          limits: { maxIterations: 8 },
+        },
+        registry,
+        executor,
+        llm,
+        approvalHandler,
+        approvalManager
+      );
+
+      console.log("\n⚡ Agent running...\n");
+      const result = await orchestrator.run({
+        task,
+        onChunk: (chunk) => {
+          process.stdout.write(chunk);
+        },
+      });
+
+      console.log("\n\n------------------- SUMMARY -------------------");
+      console.log(`Status:     ${result.status} | Iterations: ${result.iteration}`);
+      if (result.error) {
+        console.log(`Error:      ${result.error}`);
+      }
+      console.log("-----------------------------------------------");
+    }
+  } finally {
+    rl.close();
   }
 }
 
